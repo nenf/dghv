@@ -1,15 +1,7 @@
 #!/usr/bin/env sage
+from socket import socket, SOCK_STREAM, AF_INET
+from struct import pack, unpack
 from time import time
-
-class Profiler(object):
-    def __init__(self, message_format='Elapsed time: {:.5f} sec'):
-        self._message_format = message_format
-
-    def __enter__(self,):
-        self._startTime = time()
-
-    def __exit__(self, rtype, value, traceback):
-        print(self._message_format.format(time() - self._startTime))
 
 class DGHV:
     def __init__(self, parameters_dghv):
@@ -62,7 +54,6 @@ class DGHV:
         self.sk = p
         return 0
 
-
     def encrypt(self, m):
         seed = self.pk[0]
         x_0 = self.pk[1]
@@ -91,66 +82,49 @@ class DGHV:
     def decrypt(self, c):
         return (c-self.sk*((c/self.sk).round()))%2
 
-def operation_test(dghv_parameters, test_number):
-    dghv = DGHV(dghv_parameters)
+class Client:
+    def __init__(self, server_ip, server_port):
+        self.socket = socket(AF_INET, SOCK_STREAM)
+        self.socket.connect((server_ip, server_port))
 
-    set_random_seed(time())
-    b1 = ZZ.random_element(2)
-    b2 = ZZ.random_element(2)
+    def send(self, message):
+        message = pack('>I', len(message)) + message
+        self.socket.sendall(message)
 
-    dghv.key_generation()
+    def recv_message(self):
+        raw_message_len = self.recvall(4)
+        if not raw_message_len:
+            return ""
+        message_len = unpack('>I', raw_message_len)[0]
+        return self.recvall(message_len)
 
-    c1 = dghv.encrypt(b1)
-    c2 = dghv.encrypt(b2)
+    def recvall(self, n):
+        data = ""
+        while len(data) < n:
+            packet = self.socket.recv(n - len(data))
+            if not packet:
+                return ""
+            data += packet
+        return data
 
-    if ZZ.random_element(2) == 0:
-        result = dghv.decrypt(c1 + c2)
-        if (b1 + b2)%2 != result:
-            print "[-] : Test #{0} failed: {1} + {2} != {3}".format(test_number, b1, b2, result)
-        else:
-            print "[+] : Test #{0} passed: {1} + {2} == {3}".format(test_number, b1, b2, result)
-    else:
-        result = dghv.decrypt(c1 * c2)
-        if (b1 * b2)%2 != result:
-            print "[-] : Test #{0} failed: {1} * {2} != {3}".format(test_number, b1, b2, result)
-        else:
-            print "[+] : Test #{0} passed: {1} * {2} == {3}".format(test_number, b1, b2, result)
-    print "\n"
-
-def time_test(dghv_parameters):
-    dghv = DGHV(dghv_parameters)
-
-    set_random_seed(time())
-    b1 = ZZ.random_element(2)
-    b2 = ZZ.random_element(2)
-
-    with Profiler() as p:
-        dghv.key_generation()
-        print "key generation",
-
-    with Profiler() as p:
-        c1 = dghv.encrypt(b1)
-        print "Encryption b1 = {0}".format(b1),
-
-    with Profiler() as p:
-        c2 = dghv.encrypt(b2)
-        print "Encryption b2 = {0}".format(b2),
-
-    with Profiler() as p:
-        result = dghv.decrypt(c1 * c2)
-        print "Decrypt c1 * c2 = {0}".format(result),
-
-    with Profiler() as p:
-        result = dghv.decrypt(c1 + c2)
-        print "Decrypt c1 + c2 = {0}".format(result),
-
-    print "\n"
 
 toy_parameters = {"lam": 42, "rho": 27, "eta": 1026, "gamma": 150000, "alpha": 200, "tao": 158}
 small_parameters = {"lam": 52, "rho": 41, "eta": 1558, "gamma": 830000, "alpha": 1476, "tao": 572}
 medium_parameters = {"lam": 65, "rho": 56, "eta": 2128, "gamma": 4200000, "alpha": 2016, "tao": 1972}
 
-for dghv_parameters in [toy_parameters, small_parameters, medium_parameters]:
-    for test_number in range(10):
-        operation_test(dghv_parameters, test_number)
+dghv_client = DGHV(toy_parameters)
+dghv_client.key_generation()
 
+m1 = 1
+m2 = 0
+c1 = dghv_client.encrypt(m1)
+c2 = dghv_client.encrypt(m2)
+data = "{0} + {1}".format(c1, c2)
+
+client = Client("10.1.2.4", 9000)
+client.send(data)
+
+c3 = int(client.recv_message())
+m3 = dghv_client.decrypt(c3)
+
+print (m1 + m2) == m3
