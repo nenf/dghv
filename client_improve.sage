@@ -23,9 +23,9 @@ class DGHV:
 
         #Choose random odd q_0
         q_0 = ZZ.random_element((2^self.gamma)//p)
-        while q_0%2 == 0:
+        while q_0 % 2 == 0:
             q_0 = ZZ.random_element((2^self.gamma)//p)
-        x_0 = q_0*p
+        x_0 = q_0 * p
 
         #Set seed for recovery of X_i at encryption
         seed = 0
@@ -37,14 +37,11 @@ class DGHV:
         #Continue normal random
         set_random_seed(time())
 
-        # 0 <= E < 2^(lam+eta)//p
-        E=[ZZ.random_element((2^(self.lam+self.eta))//p) for i in range(self.tao)]
-
-        # -2^rho < r < 2^rho
-        r_i = [ZZ.random_element((-2^self.rho) + 1, 2^self.rho) for i in range(self.tao)]
-
-        # Construct d_i
-        d_i = [(X_i[i]%p + (E[i]*p) - r_i[i]) for i in range(self.tao)]
+        d_i = []
+        for i in range(self.tao):
+            r_i = ZZ.random_element((-2^self.rho) + 1, 2^self.rho)
+            e_i = ZZ.random_element((2^(self.lam + self.eta)) // p)
+            d_i.append((X_i[i] % p + (e_i * p) - r_i))
 
         #Return private and secret key pairs
         self.pk = [seed, x_0, d_i]
@@ -58,25 +55,29 @@ class DGHV:
 
         #Recover X_i from seed
         set_random_seed(seed)
-        X_i = [ZZ.random_element(2^(self.gamma)) for i in range (self.tao)]
-
-        #Generate x_i from X_i and d_i
-        x_i = [X_i[i]-d_i[i] for i in range(self.tao)]
+        X_i = []
+        x_i = []
+        for i in range(self.tao):
+            X_i.append(ZZ.random_element(2^(self.gamma)))
+            x_i.append(X_i[i] - d_i[i])
 
         #randomize
         set_random_seed(time())
-        self.rho_ = self.rho + self.alpha
-        r = ZZ.random_element(-2^(self.rho_) + 1, 2^(self.rho_))
+        b_i = [ZZ.random_element(2^(self.alpha)) for i in range(self.tao)]
+
+        self.rho_ = self.rho+self.alpha
+        r = ZZ.random_element(-2^(self.rho_)+1, 2^(self.rho_))
 
         c = 0
         for i in range(self.tao):
-            b_i = ZZ.random_element(2^(self.alpha))
-            c = (c + x_i[i] * b_i)
+            c = (c + x_i[i]*b_i[i])
         c = (m + 2*r + 2*c) % x_0
+
         return c
 
     def decrypt(self, c):
-        return (c - self.sk * ((c/self.sk).round())) % 2
+        return (c-self.sk*((c/self.sk).round()))%2
+
 
 class Client:
     def __init__(self, server_ip, server_port):

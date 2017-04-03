@@ -1,3 +1,4 @@
+#!/usr/bin/env sage
 from socket import socket, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, AF_INET
 from argparse import ArgumentParser
 from threading import Lock, Thread
@@ -55,10 +56,6 @@ class ClientHandler(Thread):
 
         try:
             data = self.recv_message()
-            match = search("[0-9]+\s?[*+]\s?[0-9]+", data)
-            if not match:
-                self.socket.send("String will be next format: [0-9]+\s?[*+]\s?[0-9]+\n")
-                print "[-] : {0}:{1} sended not formated string".format(self.address, self.port)
             self.send(str(sage_eval(data)))
         except Exception as e:
             print e
