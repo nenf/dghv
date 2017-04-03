@@ -1,7 +1,15 @@
 #!/usr/bin/env sage
 from socket import socket, SOCK_STREAM, AF_INET
+from argparse import ArgumentParser
 from struct import pack, unpack
+from re import findall, search
+from ast import literal_eval
+from itertools import izip
 from time import time
+from os import path
+
+SERVER_IP = "10.1.2.4"
+SERVER_PORT = 9000
 
 class DGHV:
     def __init__(self, parameters_dghv):
@@ -72,7 +80,6 @@ class DGHV:
         for i in range(self.tao):
             c = (c + x_i[i]*b_i[i])
         c = (m + 2*r + 2*c) % x_0
-
         return c
 
     def decrypt(self, c):
@@ -105,6 +112,123 @@ class Client:
         return data
 
 
+def arg_parse():
+    parser = ArgumentParser(description="DGHV client side")
+    parser.add_argument("-g", "--generate", type=str, help="Generate keys")
+    parser.add_argument("-o", "--output", type=str, default="dghv.keys", help="Path to file for save keys")
+    parser.add_argument("-i", "--input", type=str, help="Path to file with keys")
+    parser.add_argument("-t", "--type", type=str, help="Parameters type for DGHV")
+    parser.add_argument("-e", "--expression", type=str, help="Expression for compute")
+    return parser.parse_args()
+
+
+def get_parameters(parameters_type):
+    if parameters_type == "toy":
+        parameters = {"lam": 42, "rho": 27, "eta": 1026, "gamma": 150000, "alpha": 200, "tao": 158}
+    elif parameters_type == "small":
+        parameters = {"lam": 52, "rho": 41, "eta": 1558, "gamma": 830000, "alpha": 1476, "tao": 572}
+    elif parameters_type== "medium":
+        parameters = {"lam": 65, "rho": 56, "eta": 2128, "gamma": 4200000, "alpha": 2016, "tao": 1972}
+    else:
+        print "Unknown parameters type: {0}".format(parameters_type)
+        exit(1)
+    return parameters
+
+
+def key_generator(args):
+    parameters = get_parameters(args.generate)
+    dghv = DGHV(parameters)
+    dghv.key_generation()
+    with open(args.output, "w+") as f:
+        f.write("{0}\n".format(args.generate))
+        f.write("{0}\n{1}\n{2}\n".format(*dghv.pk))
+        f.write("{0}".format(dghv.sk))
+
+
+def key_read(args):
+    if not path.exists(args.input):
+       print "File {0} doesn't exist".format(args.input)
+       exit(1)
+
+    with open(args.input, "r") as f:
+        l = [l.rstrip() for l in f.readlines()]
+        try:
+            parameters_type = l[0]
+            seed = literal_eval(l[1])
+            x_0 = literal_eval(l[2])
+            d_i = literal_eval(l[3])
+
+            pk = [seed, x_0, d_i]
+            sk = Integer(literal_eval(l[4]))
+        except Exception as e:
+            print "[-] : {0}".format(e)
+            exit(1)
+        else:
+            return get_parameters(parameters_type), pk, sk
+
+
+def cloud_computing(expression):
+    try:
+        client = Client(SERVER_IP, SERVER_PORT)
+        client.send(expression)
+        c = client.recv_message()
+    except Exception as e:
+        print "[-] : {0}".format(e)
+        exit(1)
+    return c
+
+
+if __name__ == "__main__":
+    args = arg_parse()
+    if args.generate:
+        key_generator(args)
+        exit(0)
+
+    if args.input:
+        parameters, pk, sk = key_read(args)
+
+        dghv = DGHV(parameters)
+        dghv.pk = pk
+        dghv.sk = sk
+    elif args.type:
+        parameters = get_parameters(args.type)
+        dghv = DGHV(parameters)
+        dghv.key_generation()
+    else:
+        print "[-] : Should be set one of the parameter input\\type"
+        exit(1)
+
+    if args.expression:
+        expression = args.expression
+        if search("[2-9]+|[a-zA-Z]", expression):
+            print "[-] : Invalid expression: {0}".format(expression)
+            exit(1)
+    else:
+        expression = "(1 * 1) + 0"
+
+    M = [int(m) for m in findall("1|0", expression)]
+    C = [dghv.encrypt(m) for m in M]
+    F = expression
+    for m, c in izip(M, C):
+        F = F.replace(str(m), str(c), 1)
+
+    result = dghv.decrypt(int(cloud_computing(F)))
+    computed = int(eval(expression))
+
+    print "{0} = {1}".format(expression, result)
+
+
+'''
+Examples:
+1)
+# sage client_improve.sage -g toy -o dghv.keys 
+# sage client_improve.sage -i dghv.keys -e "(1 * 1) + 0"
+(1 * 1) + 0 = 1
+
+2)
+# sage client_improve.sage -t toy -e "(1 + 1) + 1"
+(1 + 1) + 1 = 1
+
 toy_parameters = {"lam": 42, "rho": 27, "eta": 1026, "gamma": 150000, "alpha": 200, "tao": 158}
 small_parameters = {"lam": 52, "rho": 41, "eta": 1558, "gamma": 830000, "alpha": 1476, "tao": 572}
 medium_parameters = {"lam": 65, "rho": 56, "eta": 2128, "gamma": 4200000, "alpha": 2016, "tao": 1972}
@@ -123,3 +247,4 @@ c3 = int(client.recv_message())
 m3 = dghv_client.decrypt(c3)
 
 print int(eval(F.format(*M))) == m3
+'''
